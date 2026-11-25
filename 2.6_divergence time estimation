@@ -1,0 +1,78 @@
+### MCMCtree
+
+## S1 generate fa files
+#!/bin/bash
+# $1
+
+BAMDIR=/mnt/sda/xiaobo/projects/cervinae/0_bamfiles
+OUTDIR=/mnt/sda/xiaobo/projects/cervinae/3_phylogeny/MCMCtree
+
+mkdir ${OUTDIR}/fafiles
+cd ${OUTDIR}/fafiles
+angsd -dofasta 2 -setMinDepth 5 -minmapq 30 -minq 30 -uniqueonly 1 -only_proper_pairs 1 -docounts 1 -rf ../../hydineWGT2T_autosome.txt -i ${BAMDIR}/$1.bam -out $1
+gunzip $1.fa.gz
+samtools faidx $1.fa
+
+## S2 Obtain the available window coordinates
+python filter_windows_bed.py
+
+## S3 Extract the homologous sequences of all samples
+#!/bin/bash
+# $1
+WORK_DIR="/mnt/sda/xiaobo/projects/cervinae/3_phylogeny/MCMCtree"
+FA_DIR="${WORK_DIR}/fafiles"
+OUT_DIR="${WORK_DIR}/extracted"
+BED="${WORK_DIR}/valid_windows.bed"
+mkdir -p "$OUT_DIR"
+bedtools getfasta \
+        -fi "${FA_DIR}/$1.fa" \
+        -bed "$BED" \
+        -name \
+        -fo "${OUT_DIR}/$1.windows.fa"
+
+    awk '
+    /^>/ {
+        next
+    }
+    {
+        seq = seq $0
+    }
+    END {
+        print ">" sample
+        print seq
+    }' sample="$sample" "${OUT_DIR}/$1.windows.fa" \
+        > "${OUT_DIR}/$1.concat.fa"
+
+# add name for samples 
+for f in *.concat.fa; do
+    name=${f%.concat.fa}
+    sed -i "1c\\>${name}" "$f"
+done
+
+# check samples' name
+for f in *.concat.fa; do
+    echo -n "$f: "
+    head -n 1 "$f"
+done
+
+cat *.concat.fa > Cervinae_9inds_1out.concat.fa
+
+## S4 transfer to phy
+
+# run fasta2phy.py
+python fasta2phy.py
+
+# check length
+head -n 1 Cervinae_9inds_1out.concat.phy
+# check samples
+awk 'NR>1 {print $1}' Cervinae_9inds_1out.concat.phy
+
+
+## S5 prepare astral tree file
+# 9inds_1out
+10 1
+(OutMun,(AxiPor,(DamDam,((ElaDav,RusAlf),(CerNip,(CerAlb,(CerEla,(CerCanAS,CerHan))))))))'>8.31<11.85';
+
+# 10inds_1out
+11 1
+(OutMun,(AxiPor,(DamDam,((ElaDav,(RucEld,RusAlf)),(CerNip,(CerAlb,(CerEla,(CerCanAS,CerHan))))))))'>8.31<11.85';
