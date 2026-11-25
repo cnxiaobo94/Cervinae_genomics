@@ -29,4 +29,4 @@ Several analyses in this repository rely on third-party scripts and open-source 
 
 ## Contact
 
-For questions regarding the scripts or analyses, please open an issue in this repository or contact the corresponding author at `[your_email@institution.edu]`.
+For questions regarding the scripts or analyses, please open an issue in this repository or contact the corresponding author at xiaobo@cug.edu.cn.
