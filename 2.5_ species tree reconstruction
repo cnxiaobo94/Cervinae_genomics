@@ -1,0 +1,6 @@
+# transfer input file
+python /home/xiaobo/software/genomics_general-master/VCF_processing/parseVCF.py -i ../1_vcffiles/Cervinae_10inds_1out_auto_snps_noTE.vcf.gz -o Cervinae_10inds_1out_auto.haplo.gz
+# run phyml_sliding_windows.py
+PYTHONPATH=/home/xiaobo/software/genomics_general-master python /home/xiaobo/software/genomics_general-master/phylo/phyml_sliding_windows.py -g Cervinae_10inds_1out_auto.haplo.gz -p Cervinae_10inds_1out_auto_w50kb_S1000kb_phyML -T 32 --outgroup OutMun --individuals CerCanAS,CerHan,CerEla,CerAlb,CerNip,RusAlf,RucEld,ElaDav,DamDam,AxiPor,OutMun -M 20 -w 50000 -S 1000000 --optimise tlr
+# run astral
+astral -i Cervinae_10inds_1out_auto_w50kb_S1000kb_phyML.trees -a Cervinae_10inds_1out_pops.txt --outgroup Outgroup -o Cervinae_10inds_1out_auto_w50kb_S1000kb_ASTRAL -t 2
