@@ -1,0 +1,40 @@
+## S1. Construct a non-overlapping continuous sliding window tree with different windows
+# w100kb  S100kb
+PYTHONPATH=/home/xiaobo/software/genomics_general-master python /home/xiaobo/software/genomics_general-master/phylo/phyml_sliding_windows.py -g Cervinae_10inds_1out_auto.haplo.gz -p Cervinae_10inds_1out_auto_w100kb_S100kb_phyML -T 32 --outgroup OutMun --individuals CerCanAS,CerHan,CerEla,CerAlb,CerNip,RusAlf,RucEld,ElaDav,DamDam,AxiPor,OutMun -M 20 -w 100000 -S 100000 --optimise tlr
+
+zcat Cervinae_10inds_1out_auto_w100kb_S100kb_phyML.trees.gz | grep OutMun > Cervinae_10inds_1out_auto_w100kb_S100kb_phyML.trees
+astral -i Cervinae_10inds_1out_auto_w100kb_S100kb_phyML.trees -a Cervinae_10inds_1out_pops.txt --outgroup Outgroup -o Cervinae_10inds_1out_auto_w100kb_S100kb_ASTRAL -t 2
+
+
+# w500kb  S500kb
+PYTHONPATH=/home/xiaobo/software/genomics_general-master python /home/xiaobo/software/genomics_general-master/phylo/phyml_sliding_windows.py -g Cervinae_10inds_1out_auto.haplo.gz -p Cervinae_10inds_1out_auto_w500kb_S500kb_phyML -T 64 --outgroup OutMun --individuals CerCanAS,CerHan,CerEla,CerAlb,CerNip,RusAlf,RucEld,ElaDav,DamDam,AxiPor,OutMun -M 20 -w 500000 -S 500000 --optimise tlr
+
+zcat Cervinae_10inds_1out_auto_w500kb_S500kb_phyML.trees.gz | grep OutMun > Cervinae_10inds_1out_auto_w500kb_S500kb_phyML.trees
+astral -i Cervinae_10inds_1out_auto_w500kb_S500kb_phyML.trees -a Cervinae_10inds_1out_pops.txt --outgroup Outgroup -o Cervinae_10inds_1out_auto_w500kb_S500kb_ASTRAL -t 2
+
+
+# w1000kb  S1000kb
+PYTHONPATH=/home/xiaobo/software/genomics_general-master python /home/xiaobo/software/genomics_general-master/phylo/phyml_sliding_windows.py -g Cervinae_10inds_1out_auto.haplo.gz -p Cervinae_10inds_1out_auto_w1000kb_S1000kb_phyML -T 32 --outgroup OutMun --individuals CerCanAS,CerHan,CerEla,CerAlb,CerNip,RusAlf,RucEld,ElaDav,DamDam,AxiPor,OutMun -M 20 -w 1000000 -S 1000000 --optimise tlr
+
+zcat Cervinae_10inds_1out_auto_w1000kb_S1000kb_phyML.trees.gz | grep OutMun > Cervinae_10inds_1out_auto_w1000kb_S1000kb_phyML.trees
+astral -i Cervinae_10inds_1out_auto_w1000kb_S1000kb_phyML.trees -a Cervinae_10inds_1out_pops.txt --outgroup Outgroup -o Cervinae_10inds_1out_auto_w1000kb_S1000kb_ASTRAL -t 2
+
+
+## S2. run twisst
+# 统计总窗口和有效树
+zcat Cervinae_10inds_1out_auto_w50kb_S50kb_phyML.trees.gz | wc -l
+wc -l Cervinae_10inds_1out_auto_w50kb_S50kb_phyML.trees
+
+# CerAlb_CerEla_CerHan_CerCanAS
+# w50kb  S50kb
+python /etc/opt/twisst-0.2/twisst.py -t Cervinae_10inds_1out_auto_w50kb_S50kb_phyML.trees.gz -w twisst/twisst_CerAlb_CerEla_CerHan_CerCanAS_w50kb_S50kb_phyML.weights.csv.gz -g CerAlb CerAlb_A,CerAlb_B -g CerEla CerEla_A,CerEla_B -g CerHan CerHan_A,CerHan_B -g CerCanAS CerCanAS_A,CerCanAS_B --outgroup CerAlb
+# w100kb  S100kb
+python /etc/opt/twisst-0.2/twisst.py -t Cervinae_10inds_1out_auto_w100kb_S100kb_phyML.trees.gz -w twisst/twisst_CerAlb_CerEla_CerHan_CerCanAS_w100kb_S100kb_phyML.weights.csv.gz -g CerAlb CerAlb_A,CerAlb_B -g CerEla CerEla_A,CerEla_B -g CerHan CerHan_A,CerHan_B -g CerCanAS CerCanAS_A,CerCanAS_B --outgroup CerAlb
+# w500kb  S500kb
+python /etc/opt/twisst-0.2/twisst.py -t Cervinae_10inds_1out_auto_w500kb_S500kb_phyML.trees.gz -w twisst/twisst_CerAlb_CerEla_CerHan_CerCanAS_w500kb_S500kb_phyML.weights.csv.gz -g CerAlb CerAlb_A,CerAlb_B -g CerEla CerEla_A,CerEla_B -g CerHan CerHan_A,CerHan_B -g CerCanAS CerCanAS_A,CerCanAS_B --outgroup CerAlb
+# w1000kb  S1000kb
+python /etc/opt/twisst-0.2/twisst.py -t Cervinae_10inds_1out_auto_w1000kb_S1000kb_phyML.trees.gz -w twisst/twisst_CerAlb_CerEla_CerHan_CerCanAS_w1000kb_S1000kb_phyML.weights.csv.gz -g CerAlb CerAlb_A,CerAlb_B -g CerEla CerEla_A,CerEla_B -g CerHan CerHan_A,CerHan_B -g CerCanAS CerCanAS_A,CerCanAS_B --outgroup CerAlb
+
+# same commands was used for other combinations as well.
+## S3. Use R script to count relevant data
+Rscript summarize_twisst.R
