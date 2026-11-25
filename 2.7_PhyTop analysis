@@ -1,0 +1,4 @@
+# using the "Cervinae_10inds_1out_auto_w50kb_S1000kb_ASTRAL" (obtained in 2.5) as input
+# run phytop
+export QT_QPA_PLATFORM=offscreen
+phytop Cervinae_10inds_1out_auto_w50kb_S1000kb_ASTRAL -colors "#7895A5,#8FA58A,#C18B7A" -figsize 4 -fontsize 18 -branch_size 48 -leaf_size 48 -pre Cervinae_10inds_1out_auto_w50kb_S1000kb
