@@ -1,0 +1,151 @@
+#!/bin/bash
+
+#########################################################################
+# Script: cadg_modern_dna_processing.sh
+# Description: This script processes modern DNA sequencing data
+# Version: v1.0
+# Date: Dec. 28, 2024
+# Designed by xiaobo    
+#########################################################################
+
+start_time=$(date +%s)
+
+if [ "${#}" -lt 5 ]; then
+    echo "Usage: sh $0 <user> <threads> <raw_dir> <SAMPLE> <ref_genome>"
+    exit 1
+fi
+
+USER=$1              # The last folder name of the personal folder ( /mnt/sda/xiaobo ) is "xiaobo"
+THREAD=$2            # Threads
+RAW_DIR=$3           # rawdata folder
+SAMPLE=$4            # data code (CADG1001_A1)
+REF=$5               # reference folder
+
+# Set the target working directory and output directory
+INPUT_DIR="/mnt/sda/${USER}/rawdata/${RAW_DIR}"
+REFERENCE="/mnt/sda/${USER}/ref/${REF}/*.fa"
+RESULT_DIR="/mnt/sda/${USER}/mapped_results/mapped${REF}/${SAMPLE}_result"
+PIPELINE_LOG="${RESULT_DIR}/${SAMPLE}_pipeline.log"
+STATS_LOG="${RESULT_DIR}/${SAMPLE}_stats.log"
+
+
+# Create the necessary directories and enter the working directory
+mkdir -p ${RESULT_DIR}
+cd ${RESULT_DIR}
+
+
+# Automatic identification of sequencing mode (single-end or double-end)
+if [ -f "${INPUT_DIR}/${SAMPLE}_1.fastq.gz" ] && [ -f "${INPUT_DIR}/${SAMPLE}_2.fastq.gz" ]; then
+    SEQUENCING_MODE="paired"
+    READ1="${INPUT_DIR}/${SAMPLE}_1.fastq.gz"
+    READ2="${INPUT_DIR}/${SAMPLE}_2.fastq.gz"
+elif [ -f "${INPUT_DIR}/${SAMPLE}.fastq.gz" ]; then
+    SEQUENCING_MODE="single"
+    READ1="${INPUT_DIR}/${SAMPLE}.fastq.gz"
+else
+    echo "$(date '+%Y-%m-%d %H:%M:%S') Error: Cannot find input files for sample ${SAMPLE}" | tee -a ${PIPELINE_LOG}
+    exit 1
+fi
+
+
+# Output log information
+echo "$(date '+%Y-%m-%d %H:%M:%S') Processing sample: ${SAMPLE}" | tee -a ${PIPELINE_LOG}
+echo "$(date '+%Y-%m-%d %H:%M:%S') Sequencing mode: ${SEQUENCING_MODE}" | tee -a ${PIPELINE_LOG}
+
+# Fastp
+echo "$(date '+%Y-%m-%d %H:%M:%S') Running fastp for quality control..." | tee -a ${PIPELINE_LOG}
+
+if [ "${SEQUENCING_MODE}" = "paired" ]; then
+    fastp -g -V -q 25 -l 30 \
+    -w ${THREAD} \
+    -i ${READ1} \
+    -I ${READ2} \
+    -o ${RESULT_DIR}/${SAMPLE}_clean_R1.fq.gz \
+    -O ${RESULT_DIR}/${SAMPLE}_clean_R2.fq.gz \
+    -h ${RESULT_DIR}/${SAMPLE}_fastp.html \
+    -j ${RESULT_DIR}/${SAMPLE}_fastp.json 2>> ${PIPELINE_LOG}
+    CLEAN_READ1="${RESULT_DIR}/${SAMPLE}_clean_R1.fq.gz"
+    CLEAN_READ2="${RESULT_DIR}/${SAMPLE}_clean_R2.fq.gz"
+else
+    fastp -g -V -q 25 -l 30 \
+    -w ${THREAD} \
+    -i ${READ1} \
+    -o ${RESULT_DIR}/${SAMPLE}_clean.fq.gz \
+    -w ${THREAD} \
+    -h ${RESULT_DIR}/${SAMPLE}_fastp.html \
+    -j ${RESULT_DIR}/${SAMPLE}_fastp.json 2>> ${PIPELINE_LOG}
+    CLEAN_READ1="${RESULT_DIR}/${SAMPLE}_clean.fq.gz"
+fi
+
+
+# BWA MEM
+MAPQ=30         # Minimum read mapping quality
+echo "$(date '+%Y-%m-%d %H:%M:%S') Running BWA MEM for alignment..." | tee -a ${PIPELINE_LOG}
+
+if [ "${SEQUENCING_MODE}" = "paired" ]; then
+    bwa mem -t ${THREAD} -M -R "@RG\tID:${SAMPLE}\tSM:${SAMPLE}\tLB:${SAMPLE}\tPL:ILLUMINA\tPU:ILLUMINA" ${REFERENCE} ${CLEAN_READ1} ${CLEAN_READ2} | samtools view -bS -F 4 -q ${MAPQ} -h -@ ${THREAD} - -o ${RESULT_DIR}/${SAMPLE}.bam 2>> ${PIPELINE_LOG}
+else
+    bwa mem -t ${THREAD} -M -R "@RG\tID:${SAMPLE}\tSM:${SAMPLE}\tLB:${SAMPLE}\tPL:ILLUMINA\tPU:ILLUMINA" ${REFERENCE} ${CLEAN_READ1} | samtools view -bS -F 4 -q ${MAPQ} -h - -o ${RESULT_DIR}/${SAMPLE}.bam 2>> ${PIPELINE_LOG}
+fi
+
+
+# GATK SortSam and samtools index
+echo "$(date '+%Y-%m-%d %H:%M:%S') Running GATK SortSam..." | tee -a ${PIPELINE_LOG}
+
+gatk --java-options "-Xmx32g -Xms16g" SortSam -I ${RESULT_DIR}/${SAMPLE}.bam -O ${RESULT_DIR}/${SAMPLE}.sorted.bam -R ${REFERENCE} -SO coordinate --CREATE_INDEX true 2>> ${PIPELINE_LOG}
+
+
+# GATK markduplicates
+echo "$(date '+%Y-%m-%d %H:%M:%S') Running GATK MarkDuplicates..." | tee -a ${PIPELINE_LOG}
+
+gatk --java-options "-Xmx32g -Xms16g" MarkDuplicates -I ${RESULT_DIR}/${SAMPLE}.sorted.bam -O ${RESULT_DIR}/${SAMPLE}.dedup.bam -REMOVE_DUPLICATES true -METRICS_FILE ${RESULT_DIR}/${SAMPLE}.dedup.metrics.txt -VALIDATION_STRINGENCY LENIENT -MAX_FILE_HANDLES_FOR_READ_ENDS_MAP 50 2>> ${PIPELINE_LOG}
+
+samtools index ${RESULT_DIR}/${SAMPLE}.dedup.bam 2>> ${PIPELINE_LOG}
+
+# GATK rehead
+echo "$(date '+%Y-%m-%d %H:%M:%S') Running GATK AddOrReplaceReadGroups..." | tee -a ${PIPELINE_LOG}
+gatk --java-options "-Xmx32g -Xms16g" AddOrReplaceReadGroups -I ${RESULT_DIR}/${SAMPLE}.dedup.bam -O ${RESULT_DIR}/${SAMPLE}.rehead.bam -R ${REFERENCE} -ID ${SAMPLE}_ALLlib -SM ${SAMPLE} -LB ${SAMPLE}_ALLlib -PL ILLUMINA -PU ILLUMINA -VALIDATION_STRINGENCY LENIENT 2>> ${PIPELINE_LOG}
+
+samtools index ${RESULT_DIR}/${SAMPLE}.rehead.bam 2>> ${PIPELINE_LOG}
+
+
+# statistical information
+echo "$(date '+%Y-%m-%d %H:%M:%S') Generating basic statistics..." | tee -a ${PIPELINE_LOG}
+MAPABLE=$(zcat ${CLEAN_READ1} ${CLEAN_READ2} | wc -l | awk '{sum=$1/4; print sum}')
+MAPPED=$(samtools idxstats ${RESULT_DIR}/${SAMPLE}.sorted.bam | awk 'BEGIN {a=0} {a += $3} END{print a}')
+UNIQ=$(samtools idxstats ${RESULT_DIR}/${SAMPLE}.dedup.bam | awk 'BEGIN {a=0} {a += $3} END{print a}')
+ENDO=$(echo "scale=5 ; ${UNIQ} / ${MAPABLE}" | bc)
+PROPUNIQ=$(echo "scale=5 ; ${UNIQ} / ${MAPPED}" | bc)
+DUPRATE=$(echo "scale=5 ; 1 - ${PROPUNIQ}" | bc)
+DEPTH=$(samtools depth ${RESULT_DIR}/${SAMPLE}.dedup.bam | awk '{sum+=$3;cnt++}END{print sum/cnt}')
+#MAP_BP=$(samtools depth ${RESULT_DIR}/${SAMPLE}.dedup.bam | awk '{sum+=$3;cnt++}END{print sum}')
+MAP_BP=$(samtools depth ${RESULT_DIR}/${SAMPLE}.dedup.bam | awk '{sum+=$3;cnt++}END{printf "%.0f\n", sum}')
+MAP_GB=$(echo "scale=5 ; ${MAP_BP} / 1000000000" | bc)
+
+# Record statistical information
+echo "Sample: ${SAMPLE}" > ${STATS_LOG}
+echo "Reference: ${REFERENCE}" >> ${STATS_LOG}
+echo "Script: cadg_modern_dna_processing.sh" >> ${STATS_LOG}
+echo "Date: $(date +"%d-%m-%Y")" >> ${STATS_LOG}
+echo "Mappable Reads: ${MAPABLE}" >> ${STATS_LOG}
+echo "Mapped Reads: ${MAPPED}" >> ${STATS_LOG}
+echo "Unique Mapped Reads: ${UNIQ}" >> ${STATS_LOG}
+echo "Endogenous: ${ENDO}" >> ${STATS_LOG}
+echo "Duplication Rate: ${DUPRATE}" >> ${STATS_LOG}
+echo "Average Depth: ${DEPTH}" >> ${STATS_LOG}
+echo "Mapped Base Pairs: ${MAP_BP}" >> ${STATS_LOG}
+echo "Mapped Gigabases: ${MAP_GB}" >> ${STATS_LOG}
+
+# finish
+echo "$(date '+%Y-%m-%d %H:%M:%S') Pipeline completed for sample ${SAMPLE}" | tee -a ${PIPELINE_LOG}
+echo "$(date '+%Y-%m-%d %H:%M:%S') Results are stored in ${RESULT_DIR}" | tee -a ${PIPELINE_LOG}
+
+end_time=$(date +%s)
+elapsed_time=$((end_time - start_time))
+echo "$(date '+%Y-%m-%d %H:%M:%S') Total execution time: $elapsed_time seconds" | tee -a ${PIPELINE_LOG}
+
+# cleaning
+rm ${SAMPLE}_clean_R1.fq.gz ${SAMPLE}_clean_R2.fq.gz ${SAMPLE}_clean.fq.gz
+rm ${SAMPLE}.bam ${SAMPLE}.sorted.bam ${SAMPLE}.sorted.bai ${SAMPLE}.dedup*
+mkdir ${RESULT_DIR}/${SAMPLE}_logfiles
+mv *html *json *txt *log ${SAMPLE}_logfiles/
