@@ -1,0 +1,97 @@
+###### 2.4. Single nucleotide polymorphisms (SNPs) calling and filtering
+
+
+### 1. Prepare TE region BED file
+
+## Rename chromosomes in HIN_TE.gff to match GenBank accessions
+awk 'BEGIN{FS=OFS="\t"}
+!/^#/ && $1 ~ /^Chr[0-9]+$/ {
+    n=$1
+    sub(/^Chr/, "", n)
+    sub(/^0+/, "", n)
+    $1=sprintf("CM%d.1", 190830+n+1)
+}
+!/^#/ && $1=="ChrX" {
+    $1="CM190865.1"
+}
+{print}' HIN_TE.gff > HIN_TE_CM.gff
+
+## Convert GFF to BED
+# Extract TE coordinates
+awk '$1 !~ /^#/ {print $1"\t"$4-1"\t"$5}' HIN_TE_CM.gff > HIN_TE.bed
+
+# Sort BED file
+sort -k1,1 -k2,2n HIN_TE.bed > HIN_TE.sorted.bed
+
+# Merge overlapping TE regions
+bedtools merge -i HIN_TE.sorted.bed > HIN_TE.merge.bed
+
+
+### 2. SNP calling and filtering
+
+REF=/mnt/sda/xiaobo/ref/hydineWGT2T/GCA_056247825.2_ASM5624782v2_genomic.fa
+BAMDIR=/mnt/sda/xiaobo/projects/cervinae/0_bamfiles
+OUT=/mnt/sda/xiaobo/projects/cervinae/1_vcffiles
+
+# $1: chromosome name
+cd ${BAMDIR}
+mkdir -p ${OUT}/regions
+
+bcftools mpileup \
+    --threads 2 \
+    -f ${REF} \
+    -r $1 \
+    -b ${BAMDIR}/Cervinae_10inds_1out.txt \
+    -Ou \
+| bcftools call \
+    -mv \
+    --threads 2 \
+    -Oz \
+    -o ${OUT}/regions/$1.vcf.gz
+
+bcftools index -t ${OUT}/regions/$1.vcf.gz
+
+# Concatenate autosomal VCFs
+ls *.vcf.gz > autosome_vcf_list.txt
+bcftools concat --threads 32 -f autosome_vcf_list.txt -Oz -o ../Cervinae_10inds_1out_auto.vcf.gz
+bcftools index -t ../Cervinae_10inds_1out_auto.vcf.gz
+
+# Extract biallelic SNPs (QUAL >= 30)
+bcftools view -m2 -M2 -v snps -i 'QUAL>=30' -Oz -o Cervinae_10inds_1out_auto_snps_raw.vcf.gz Cervinae_10inds_1out_auto.vcf.gz
+bcftools index -t Cervinae_10inds_1out_auto_snps_raw.vcf.gz
+
+# Calculate site missingness (F_MISSING)
+bcftools +fill-tags Cervinae_10inds_1out_auto_snps_raw.vcf.gz -Oz -o Cervinae_10inds_1out_auto_snps_tags.vcf.gz -- -t F_MISSING
+bcftools index -t Cervinae_10inds_1out_auto_snps_tags.vcf.gz
+
+# Retain sites with <= 20% missing data
+bcftools view -i 'F_MISSING<=0.2' -Oz -o Cervinae_10inds_1out_auto_snps_0.2.vcf.gz Cervinae_10inds_1out_auto_snps_tags.vcf.gz
+bcftools index -t Cervinae_10inds_1out_auto_snps_0.2.vcf.gz
+
+# Exclude SNPs overlapping TE regions
+bedtools intersect -v -a Cervinae_10inds_1out_auto_snps_0.2.vcf.gz -b ../HIN_TE.merge.bed -header > Cervinae_10inds_1out_auto_snps_noTE.vcf
+bgzip Cervinae_10inds_1out_auto_snps_noTE.vcf
+tabix -p vcf Cervinae_10inds_1out_auto_snps_noTE.vcf.gz
+
+
+### 3. LD pruning
+
+cd /mnt/sda/xiaobo/projects/cervinae/2_vcffiles
+
+plink --vcf Cervinae_10inds_1out_auto_snps_noTE.vcf.gz \
+    --double-id \
+    --allow-extra-chr \
+    --set-missing-var-ids @:#\$1_\$2 \
+    --make-bed \
+    --out Cervinae_10inds_1out_auto_snps_noTE_LD_input
+
+plink --bfile Cervinae_10inds_1out_auto_snps_noTE_LD_input \
+    --allow-extra-chr \
+    --indep-pairwise 50 5 0.2 \
+    --out Cervinae_10inds_1out_auto_snps_noTE_LD
+
+plink --bfile Cervinae_10inds_1out_auto_snps_noTE_LD_input \
+    --allow-extra-chr \
+    --extract Cervinae_10inds_1out_auto_snps_noTE_LD.prune.in \
+    --recode vcf-iid bgz \
+    --out Cervinae_10inds_1out_auto_snps_noTE_LD_pruned
